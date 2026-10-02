@@ -1,0 +1,25 @@
+@import "tailwindcss";
+
+/*
+|--------------------------------------------------------------------------
+| Tailwind Sources
+|--------------------------------------------------------------------------
+| Memastikan Tailwind membaca semua class yang digunakan pada Blade Laravel.
+*/
+@source '../views/**/*.blade.php';
+@source '../../app/**/*.php';
+@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+@source '../../storage/framework/views/*.php';
+
+@theme {
+    --font-sans:
+        "Inter", ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji",
+        "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+
+    --color-brand-green: #1a5d3a;
+    --color-brand-green-dark: #154a2e;
+    --color-brand-green-light: #2d6a4f;
+    --color-brand-mint: #e8f5e9;
+    --color-brand-cream: #faf9f5;
+    --color-brand-gold: #f5c518;
+}
