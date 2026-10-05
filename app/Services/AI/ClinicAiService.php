@@ -24,6 +24,7 @@ class ClinicAiService
         private readonly ClinicOperationalService $operationalService,
         private readonly ClinicScheduleService $scheduleService,
         private readonly ClinicFactGuard $factGuard,
+        private readonly ClinicUnknownReplyService $unknownReply,
     ) {
     }
 
@@ -697,12 +698,7 @@ PROMPT,
         callable $emit,
         float $startedAt
     ): void {
-        $topic = trim($this->queryAnalyzer->topicLabel($question));
-        $subject = $topic !== '' ? ' mengenai '.$topic : '';
-
-        $reply = "Mohon maaf, informasi{$subject} belum tersedia pada sistem Asisten Klinik Mitra Sehat. "
-            ."Pertanyaan Anda sudah kami catat sebagai bahan pengetahuan AI agar dapat dilengkapi oleh admin klinik. "
-            ."Untuk memastikan informasi saat ini, silakan menghubungi petugas Klinik Mitra Sehat.";
+        $reply = $this->unknownReply->build($question);
 
         $this->directReply(
             $reply,
