@@ -11,8 +11,11 @@ return new class extends Migration
         Schema::create('website_visitors', function (Blueprint $table) {
             $table->id();
             $table->uuid('visitor_uuid')->unique();
-            $table->timestamp('first_seen_at');
-            $table->timestamp('last_seen_at');
+
+            // Gunakan dateTime agar kompatibel dengan MariaDB Server 1.
+            $table->dateTime('first_seen_at');
+            $table->dateTime('last_seen_at');
+
             $table->unsignedBigInteger('total_page_views')->default(0);
             $table->timestamps();
 
@@ -21,10 +24,16 @@ return new class extends Migration
 
         Schema::create('website_daily_visits', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('visitor_id')->constrained('website_visitors')->cascadeOnDelete();
+            $table->foreignId('visitor_id')
+                ->constrained('website_visitors')
+                ->cascadeOnDelete();
+
             $table->date('visit_date');
-            $table->timestamp('first_seen_at');
-            $table->timestamp('last_seen_at');
+
+            // Gunakan dateTime agar kompatibel dengan MariaDB Server 1.
+            $table->dateTime('first_seen_at');
+            $table->dateTime('last_seen_at');
+
             $table->unsignedInteger('page_views')->default(1);
             $table->timestamps();
 
