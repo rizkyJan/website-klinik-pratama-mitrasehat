@@ -23,6 +23,7 @@ class ClinicAiService
         private readonly ClinicIntentRouter $intentRouter,
         private readonly ClinicOperationalService $operationalService,
         private readonly ClinicScheduleService $scheduleService,
+        private readonly ClinicFactGuard $factGuard,
     ) {
     }
 
@@ -52,7 +53,13 @@ class ClinicAiService
             return;
         }
 
-        $classification = $this->classifier->classify($question);
+        // Preflight guard: fakta/kebijakan Klinik Mitra Sehat tidak boleh jatuh ke
+        // health_general hanya karena mengandung kata medis seperti obat/vaksin/dokter.
+        // Jika guard mengenali pola operasional klinik, paksa domain clinic agar jawaban
+        // harus berasal dari database/knowledge resmi atau berakhir sebagai clinic_unknown.
+        $classification = $this->factGuard->shouldForceClinic($question)
+            ? 'clinic'
+            : $this->classifier->classify($question);
 
         // Agar percakapan terasa seperti ChatGPT: follow-up singkat seperti
         // "terus fungsinya?" tetap dianggap kesehatan bila konteks sebelumnya memang kesehatan.
