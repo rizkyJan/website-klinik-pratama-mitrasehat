@@ -87,11 +87,20 @@ class ClinicContextBuilder
             $services = Service::query()->where('is_active', true)->orderBy('sort_order')->take(12)->get();
             if ($services->isNotEmpty()) {
                 $relevant = true;
-                $confidence = $confidence === 'high' ? 'high' : 'medium';
-                $parts[] = "DAFTAR LAYANAN AKTIF WEBSITE:\n".$services
-                    ->map(fn (Service $item) => "- {$item->name}: {$item->description}")
-                    ->implode("\n");
+                $confidence = 'high';
+                $serviceText = $services
+                    ->map(fn (Service $item) => "• {$item->name}".(filled($item->description) ? ": {$item->description}" : ''))
+                    ->implode("
+");
+                $parts[] = "DAFTAR LAYANAN AKTIF WEBSITE:
+".$serviceText;
                 $sources[] = 'Layanan';
+
+                $primaryAnswer = "Layanan yang tercatat aktif di website Klinik Mitra Sehat:
+
+".$serviceText;
+                $primaryType = 'service_list';
+                $matchedTopic = 'Daftar Layanan Klinik';
             }
         } else {
             // Untuk pertanyaan ketersediaan layanan tertentu, sebuah layanan hanya boleh dianggap
@@ -205,11 +214,17 @@ class ClinicContextBuilder
 
         return $items
             ->map(function ($item) use ($question, $haystackResolver) {
-                $score = $this->analyzer->matchScore($question, (string) $haystackResolver($item));
-                return ['item' => $item, 'score' => $score];
+                $source = (string) $haystackResolver($item);
+                $evidence = $this->analyzer->matchEvidence($question, $source);
+
+                return [
+                    'item' => $item,
+                    'score' => $evidence['score'],
+                    'strong' => $this->analyzer->isStrongMatch($question, $source),
+                ];
             })
-            // 6 berarti minimal satu token bermakna benar-benar cocok.
-            ->filter(fn ($row) => $row['score'] >= 6)
+            // Sangat konservatif: satu kata umum tidak cukup untuk menjawab fakta klinik.
+            ->filter(fn (array $row) => $row['strong'] === true)
             ->sortByDesc('score')
             ->pluck('item')
             ->values();

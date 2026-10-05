@@ -197,17 +197,18 @@ class ClinicAiService
             'primary_type' => null,
             'matched_topic' => null,
         ];
+
         if ($classification === 'clinic') {
             $clinicContext = $this->contextBuilder->build($question);
 
-            if (! $clinicContext['relevant']) {
+            // Fakta Klinik Mitra Sehat TIDAK PERNAH dijawab dari pengetahuan umum Qwen.
+            // Jika bukti resmi tidak kuat atau tidak mempunyai jawaban eksplisit, lebih aman
+            // mengatakan belum ada informasi dan mencatatnya sebagai bahan ajar admin.
+            if (! $clinicContext['relevant'] || ! filled($clinicContext['primary_answer'])) {
                 if ($storeUnanswered) {
                     $this->unanswered->record($question);
                 }
 
-                // Fakta klinik yang belum tersedia tetap harus konsisten: jangan pernah menebak
-                // apakah layanan ADA/TIDAK ADA. Namun untuk istilah medis (contoh: spirometri),
-                // Qwen boleh menambahkan penjelasan UMUM setelah kalimat ketidaktersediaan fakta.
                 $this->replyUnknownClinic(
                     $question,
                     $conversation,
@@ -218,39 +219,26 @@ class ClinicAiService
                 return;
             }
 
-            $isAvailability = $this->queryAnalyzer->isAvailabilityIntent($question);
+            // Semua jawaban fakta klinik yang lolos retrieval ditampilkan LANGSUNG dari
+            // knowledge/FAQ/layanan resmi. Tidak membawa history pertanyaan klinik sebelumnya
+            // dan tidak digenerate ulang oleh model, sehingga tidak akan menggabungkan pertanyaan
+            // lama seperti ambulans/QRIS/nebulizer ke pertanyaan baru.
             $isProcedure = $this->queryAnalyzer->isProcedureIntent($question);
-            $primaryType = $clinicContext['primary_type'];
-            $hasGroundedAnswer = filled($clinicContext['primary_answer']);
-
-            // Pertanyaan ketersediaan harus deterministik. Begitu pula pertanyaan prosedur/cara
-            // (mis. cara daftar Mobile JKN): jika jawaban resmi ditemukan kuat, tampilkan langsung
-            // dari knowledge/FAQ agar lengkap dan tidak terpotong oleh batas generasi model.
-            $canAnswerAvailability = $isAvailability
-                && $hasGroundedAnswer
-                && in_array($primaryType, ['knowledge', 'faq', 'service'], true);
-
-            $canAnswerProcedure = $isProcedure
-                && $hasGroundedAnswer
-                && in_array($primaryType, ['knowledge', 'faq'], true);
-
-            if ($canAnswerAvailability || $canAnswerProcedure) {
-                $this->directReply(
-                    $this->formatGroundedReply(
-                        (string) $clinicContext['primary_answer'],
-                        (string) ($clinicContext['matched_topic'] ?? ''),
-                        $isProcedure
-                    ),
-                    'clinic_grounded',
-                    $conversation,
-                    $storeHistory,
-                    $emit,
-                    $startedAt,
-                    true,
-                    $clinicContext['sources']
-                );
-                return;
-            }
+            $this->directReply(
+                $this->formatGroundedReply(
+                    (string) $clinicContext['primary_answer'],
+                    (string) ($clinicContext['matched_topic'] ?? ''),
+                    $isProcedure
+                ),
+                'clinic_grounded',
+                $conversation,
+                $storeHistory,
+                $emit,
+                $startedAt,
+                true,
+                $clinicContext['sources']
+            );
+            return;
         }
 
         $history = $conversation && $storeHistory
@@ -667,38 +655,23 @@ PROMPT,
         callable $emit,
         float $startedAt
     ): void {
-        $base = AiSetting::valueOf(
-            'unknown_message',
-            'Mohon maaf, informasi tersebut belum tersedia pada sistem Asisten Klinik Mitra Sehat. Pertanyaan Anda sudah kami catat agar dapat dilengkapi oleh pihak klinik. Untuk memastikan, silakan menghubungi petugas Klinik Mitra Sehat.'
+        $topic = trim($this->queryAnalyzer->topicLabel($question));
+        $subject = $topic !== '' ? ' mengenai '.$topic : '';
+
+        $reply = "Mohon maaf, informasi{$subject} belum tersedia pada sistem Asisten Klinik Mitra Sehat. "
+            ."Pertanyaan Anda sudah kami catat sebagai bahan pengetahuan AI agar dapat dilengkapi oleh admin klinik. "
+            ."Untuk memastikan informasi saat ini, silakan menghubungi petugas Klinik Mitra Sehat.";
+
+        $this->directReply(
+            $reply,
+            'clinic_unknown',
+            $conversation,
+            $storeHistory,
+            $emit,
+            $startedAt,
+            false,
+            []
         );
-
-        $reply = trim($base);
-
-        // Tampilkan bagian fakta yang aman SEKETIKA. Pengguna tidak perlu menunggu Qwen selesai
-        // hanya untuk mengetahui bahwa ketersediaan layanan belum tercatat.
-        $emit('meta', ['classification' => 'clinic_unknown', 'sources' => []]);
-        $emit('delta', ['content' => $reply]);
-
-        // Hanya tambahkan edukasi umum bila pertanyaannya memang menyentuh konsep kesehatan/medis.
-        // Contoh "spirometri" boleh dijelaskan secara umum; "parkir tersedia?" tidak perlu.
-        if ($this->classifier->isHealthRelated($question)) {
-            try {
-                $general = $this->generalMedicalExplanation($question);
-                if ($general !== null) {
-                    $suffix = "\n\nInformasi umum:\n".$general;
-                    $reply .= $suffix;
-                    $emit('delta', ['content' => $suffix]);
-                }
-            } catch (Throwable $e) {
-                // Enrichment bersifat bonus. Bila model gagal, jawaban fakta klinik tetap aman.
-                report($e);
-            }
-        }
-
-        $elapsedMs = (int) round((microtime(true) - $startedAt) * 1000);
-        $this->storeAssistantMessage($conversation, $reply, 'clinic_unknown', $storeHistory, $elapsedMs, false);
-        $this->touchConversation($conversation, $question, 'clinic_unknown', $storeHistory, 2);
-        $emit('done', ['response_time_ms' => $elapsedMs]);
     }
 
     private function generalMedicalExplanation(string $question): ?string

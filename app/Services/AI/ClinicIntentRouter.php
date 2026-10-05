@@ -51,7 +51,7 @@ class ClinicIntentRouter
             return self::LOCATION;
         }
 
-        if ($this->containsAny($text, ['nomor whatsapp', 'nomor wa', 'whatsapp', 'kontak', 'telepon', 'nomor telepon'])) {
+        if ($this->isContactQuestion($text)) {
             return self::CONTACT;
         }
 
@@ -64,6 +64,26 @@ class ClinicIntentRouter
         }
 
         return self::GENERAL;
+    }
+
+
+    private function isContactQuestion(string $text): bool
+    {
+        // Pertanyaan yang hanya menyebut WhatsApp belum tentu meminta nomor kontak.
+        // Contoh "hasil pemeriksaan bisa dikirim lewat WhatsApp?" adalah kebijakan layanan,
+        // bukan permintaan nomor WA, sehingga harus dicari di knowledge atau dijawab unknown.
+        if ($this->containsAny($text, [
+            'nomor whatsapp', 'nomor wa', 'nomor telepon', 'kontak klinik',
+            'kontak mitra sehat', 'telepon klinik', 'whatsapp klinik berapa',
+            'wa klinik berapa', 'hubungi klinik', 'cara menghubungi klinik',
+        ])) {
+            return true;
+        }
+
+        $asksNumber = $this->containsAny($text, ['nomor', 'kontak', 'hubungi']);
+        $channel = $this->containsAny($text, ['whatsapp', ' wa ', 'telepon']);
+
+        return $asksNumber && $channel;
     }
 
     private function isClinicHoursQuestion(string $text): bool
