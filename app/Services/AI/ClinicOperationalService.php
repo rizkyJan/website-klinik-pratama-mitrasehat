@@ -28,6 +28,7 @@ class ClinicOperationalService
     {
         return match ($intent) {
             ClinicIntentRouter::CLINIC_HOURS => $this->clinicHours($question),
+            ClinicIntentRouter::HOLIDAY_HOURS => $this->holidayHours($question),
             ClinicIntentRouter::MOBILE_JKN => $this->mobileJkn(),
             ClinicIntentRouter::CONTACT => $this->contact(),
             ClinicIntentRouter::LOCATION => $this->location(),
@@ -79,6 +80,57 @@ class ClinicOperationalService
         $text .= "\n\nJika yang Anda maksud jadwal dokter, tulis misalnya: “jadwal dokter besok”.";
 
         return $this->result($text, ['Jam Pelayanan Klinik', ...($note ? ['Pengumuman'] : [])], 'clinic_hours');
+    }
+
+
+    private function holidayHours(string $question): ?array
+    {
+        $target = $this->dates->resolve($question, $this->dates->now());
+        $normalized = $this->queryAnalyzer->normalize($question);
+
+        $keywords = ['lebaran', 'idul fitri', 'idul adha', 'tanggal merah', 'libur nasional', 'natal', 'tahun baru', 'libur', 'tutup', 'buka'];
+        $items = $this->announcementItemsFor($target)
+            ->filter(function (Announcement $item) use ($keywords, $normalized) {
+                $text = $this->queryAnalyzer->normalize((string) $item->title.' '.(string) $item->content);
+
+                $hasHolidaySignal = false;
+                foreach ($keywords as $keyword) {
+                    if (str_contains($text, $this->queryAnalyzer->normalize($keyword))) {
+                        $hasHolidaySignal = true;
+                        break;
+                    }
+                }
+
+                if (! $hasHolidaySignal) {
+                    return false;
+                }
+
+                // Bila pertanyaan menyebut hari raya tertentu, pengumuman juga harus menyebutnya.
+                foreach (['lebaran', 'idul fitri', 'idul adha', 'natal', 'tahun baru'] as $specific) {
+                    if (str_contains($normalized, $specific) && ! str_contains($text, $specific)) {
+                        return false;
+                    }
+                }
+
+                return true;
+            })
+            ->take(3);
+
+        if ($items->isEmpty()) {
+            return null;
+        }
+
+        $lines = ['Informasi jadwal khusus/libur Klinik Mitra Sehat'];
+        foreach ($items as $item) {
+            $lines[] = '';
+            $lines[] = '• '.trim((string) $item->title);
+            $content = trim((string) $item->content);
+            if ($content !== '') {
+                $lines[] = '  '.$content;
+            }
+        }
+
+        return $this->result(implode("\n", $lines), ['Pengumuman'], 'clinic_holiday_hours');
     }
 
     private function mobileJkn(): array

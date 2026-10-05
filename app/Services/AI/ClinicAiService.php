@@ -128,6 +128,25 @@ class ClinicAiService
                 );
                 return;
             }
+
+            // Data real-time (stok, jumlah pasien, petugas jaga, dsb.) hanya boleh dijawab
+            // bila kelak ada integrasi sumber data real-time. Jangan pernah meminta Qwen menebaknya.
+            // Untuk jadwal hari libur, jika tidak ada pengumuman aktif kita masih mengizinkan
+            // retrieval knowledge admin yang secara eksplisit menyebut hari libur tersebut.
+            if ($clinicIntent === ClinicIntentRouter::REALTIME_DATA) {
+                if ($storeUnanswered) {
+                    $this->unanswered->record($question);
+                }
+
+                $this->replyUnknownClinic(
+                    $question,
+                    $conversation,
+                    $storeHistory,
+                    $emit,
+                    $startedAt
+                );
+                return;
+            }
         }
 
         $healthIntent = $classification === 'health'
@@ -410,6 +429,8 @@ class ClinicAiService
             return [];
         }
 
+        $currentTopic = $this->healthQueryAnalyzer->topicKey($currentQuestion);
+
         // Cari pertanyaan user eksplisit terakhir (mis. "perut saya sakit...").
         // Potong konteks dari titik itu agar topik gigi tidak ikut saat percakapan sudah pindah ke perut.
         $startIndex = null;
@@ -432,6 +453,15 @@ class ClinicAiService
 
         if ($startIndex === null) {
             return [];
+        }
+
+        // Bila user menyebut topik eksplisit pada follow-up, pastikan topiknya sama dengan
+        // anchor terakhir. Ini mencegah "gigi" terbawa ke pertanyaan baru tentang "perut".
+        if ($currentTopic !== '') {
+            $anchorTopic = $this->healthQueryAnalyzer->topicKey((string) $messages[$startIndex]->content);
+            if ($anchorTopic !== '' && $anchorTopic !== $currentTopic) {
+                return [];
+            }
         }
 
         return $messages
@@ -463,7 +493,12 @@ class ClinicAiService
 
         // Hanya bawa sedikit konteks bila kalimat memang tampak sebagai follow-up.
         // Pertanyaan mandiri selalu dimulai dari konteks bersih agar tidak tercampur organ/topik lama.
-        if ($conversation && $storeHistory && $this->healthQueryAnalyzer->isContextualFollowUp($question)) {
+        if (
+            $conversation
+            && $storeHistory
+            && $this->healthQueryAnalyzer->isContextualFollowUp($question)
+            && $this->healthQueryAnalyzer->topicKey($question) === ''
+        ) {
             $history = $conversation->messages()
                 ->whereIn('role', ['user', 'assistant'])
                 ->whereIn('classification', ['health', 'health_general', 'health_reference', 'health_definition'])

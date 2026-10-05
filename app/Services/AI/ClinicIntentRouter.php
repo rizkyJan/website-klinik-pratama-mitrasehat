@@ -5,15 +5,13 @@ namespace App\Services\AI;
 use Illuminate\Support\Str;
 
 /**
- * Router intent khusus fakta operasional klinik.
- *
- * Tujuan utama: pertanyaan yang jawabannya sudah ada di database/config tidak perlu
- * "dipikirkan" oleh model kecil. Ini membuat jawaban lebih akurat, cepat, konsisten,
- * dan tidak terpotong oleh batas token model.
+ * Router deterministik untuk fakta Klinik Mitra Sehat.
+ * Fakta operasional tidak boleh ditentukan oleh Qwen.
  */
 class ClinicIntentRouter
 {
     public const CLINIC_HOURS = 'clinic_hours';
+    public const HOLIDAY_HOURS = 'holiday_hours';
     public const DOCTOR_SCHEDULE = 'doctor_schedule';
     public const MOBILE_JKN = 'mobile_jkn';
     public const CONTACT = 'clinic_contact';
@@ -21,20 +19,23 @@ class ClinicIntentRouter
     public const ANNOUNCEMENT = 'clinic_announcement';
     public const SERVICE_HOURS = 'service_hours';
     public const SERVICE_AVAILABILITY = 'service_availability';
+    public const REALTIME_DATA = 'realtime_data';
     public const GENERAL = 'clinic_general';
 
     public function detect(string $question): string
     {
         $text = $this->normalize($question);
 
-        // Pendaftaran Mobile JKN/Telehealth harus menang atas kata "dokter/poli" yang
-        // mungkin ikut muncul di kalimat prosedurnya.
-        if ($this->containsAny($text, ['mobile jkn', 'jkn mobile', 'telehealth'])
-            && $this->containsAny($text, ['daftar', 'pendaftaran', 'cara', 'bagaimana', 'gimana', 'masuk', 'chat'])) {
+        if ($this->isMobileJknProcedure($text)) {
             return self::MOBILE_JKN;
         }
 
-        // Jam buka KLINIK ≠ jadwal dokter. Prioritaskan intent ini sebelum doctor_schedule.
+        // Jadwal libur khusus tidak boleh dijawab memakai jam rutin bila belum ada pengumuman.
+        if ($this->isHolidayHoursQuestion($text)) {
+            return self::HOLIDAY_HOURS;
+        }
+
+        // Jam buka KLINIK ≠ jadwal dokter.
         if ($this->isClinicHoursQuestion($text)) {
             return self::CLINIC_HOURS;
         }
@@ -47,11 +48,17 @@ class ClinicIntentRouter
             return self::DOCTOR_SCHEDULE;
         }
 
+        // Data real-time yang belum terhubung ke SIMRS/farmasi/SDM tidak boleh ditebak.
+        if ($this->isRealtimeQuestion($text)) {
+            return self::REALTIME_DATA;
+        }
+
         if ($this->containsAny($text, ['alamat', 'lokasi', 'maps', 'google maps', 'dimana klinik', 'di mana klinik'])) {
             return self::LOCATION;
         }
 
-        if ($this->isContactQuestion($text)) {
+        // Menyebut kata WhatsApp tidak otomatis berarti user meminta nomor kontak.
+        if ($this->isContactRequest($text)) {
             return self::CONTACT;
         }
 
@@ -66,24 +73,26 @@ class ClinicIntentRouter
         return self::GENERAL;
     }
 
-
-    private function isContactQuestion(string $text): bool
+    private function isMobileJknProcedure(string $text): bool
     {
-        // Pertanyaan yang hanya menyebut WhatsApp belum tentu meminta nomor kontak.
-        // Contoh "hasil pemeriksaan bisa dikirim lewat WhatsApp?" adalah kebijakan layanan,
-        // bukan permintaan nomor WA, sehingga harus dicari di knowledge atau dijawab unknown.
-        if ($this->containsAny($text, [
-            'nomor whatsapp', 'nomor wa', 'nomor telepon', 'kontak klinik',
-            'kontak mitra sehat', 'telepon klinik', 'whatsapp klinik berapa',
-            'wa klinik berapa', 'hubungi klinik', 'cara menghubungi klinik',
-        ])) {
-            return true;
+        return $this->containsAny($text, ['mobile jkn', 'jkn mobile', 'telehealth'])
+            && $this->containsAny($text, ['daftar', 'pendaftaran', 'cara', 'bagaimana', 'gimana', 'masuk', 'chat']);
+    }
+
+    private function isHolidayHoursQuestion(string $text): bool
+    {
+        $holiday = $this->containsAny($text, [
+            'lebaran', 'idul fitri', 'idul adha', 'tanggal merah', 'libur nasional',
+            'hari libur', 'natal', 'tahun baru',
+        ]);
+
+        if (! $holiday) {
+            return false;
         }
 
-        $asksNumber = $this->containsAny($text, ['nomor', 'kontak', 'hubungi']);
-        $channel = $this->containsAny($text, ['whatsapp', ' wa ', 'telepon']);
-
-        return $asksNumber && $channel;
+        return $this->containsAny($text, [
+            'buka', 'tutup', 'jam', 'pelayanan', 'layanan', 'praktik', 'praktek', 'dokter', 'klinik',
+        ]);
     }
 
     private function isClinicHoursQuestion(string $text): bool
@@ -99,7 +108,6 @@ class ClinicIntentRouter
             return false;
         }
 
-        // Jika secara eksplisit menyebut dokter/poli tertentu, bukan jam buka klinik umum.
         if ($this->containsAny($text, ['jadwal dokter', 'dokter siapa', 'dokter yang', 'praktik dokter', 'praktek dokter'])) {
             return false;
         }
@@ -127,17 +135,46 @@ class ClinicIntentRouter
     {
         $doctor = $this->containsAny($text, [
             'jadwal dokter', 'dokter siapa', 'siapa dokter', 'dokter yang', 'dokter praktik',
-            'dokter praktek', 'praktik dokter', 'praktek dokter', 'dr ', 'drg ',
+            'dokter praktek', 'praktik dokter', 'praktek dokter', 'dokter jaga', 'dokter', 'dr ', 'drg ',
         ]);
 
         if (! $doctor) {
-            // "jadwal dr auliya" atau "dr auliya besok" tetap ditangani sebagai jadwal dokter.
             $doctor = preg_match('/\bdrg?\b/u', $text) === 1;
         }
 
         return $doctor && $this->containsAny($text, [
             'jadwal', 'praktik', 'praktek', 'hari ini', 'sekarang', 'saat ini', 'besok', 'lusa',
-            'senin', 'selasa', 'rabu', 'kamis', 'jumat', 'sabtu', 'minggu', 'jam', 'siapa',
+            'senin', 'selasa', 'rabu', 'kamis', 'jumat', 'sabtu', 'minggu', 'jam', 'siapa', 'jaga',
+        ]);
+    }
+
+    private function isRealtimeQuestion(string $text): bool
+    {
+        if ($this->containsAny($text, ['stok ', 'persediaan '])) {
+            return true;
+        }
+
+        if ($this->containsAny($text, ['jumlah pasien', 'berapa pasien', 'pasien hari ini', 'pasien sekarang'])) {
+            return true;
+        }
+
+        if ($this->containsAny($text, ['petugas pendaftaran', 'petugas yang jaga', 'petugas jaga', 'admin yang jaga'])) {
+            return true;
+        }
+
+        if ($this->containsAny($text, ['nomor antrean sekarang', 'nomor antrian sekarang', 'antrean saat ini', 'antrian saat ini'])) {
+            return true;
+        }
+
+        return false;
+    }
+
+    private function isContactRequest(string $text): bool
+    {
+        return $this->containsAny($text, [
+            'nomor whatsapp', 'nomor wa', 'wa klinik berapa', 'whatsapp klinik berapa',
+            'nomor telepon', 'telepon klinik', 'kontak klinik', 'cara menghubungi klinik',
+            'hubungi klinik',
         ]);
     }
 
@@ -164,7 +201,6 @@ class ClinicIntentRouter
     {
         $text = Str::lower(Str::ascii($text));
         $text = preg_replace('/[^a-z0-9\s]/', ' ', $text) ?? $text;
-        $text = preg_replace('/\s+/', ' ', trim($text)) ?? trim($text);
-        return $text;
+        return preg_replace('/\s+/', ' ', trim($text)) ?? trim($text);
     }
 }

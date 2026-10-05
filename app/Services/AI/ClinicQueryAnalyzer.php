@@ -5,13 +5,13 @@ namespace App\Services\AI;
 use Illuminate\Support\Str;
 
 /**
- * Analisis pertanyaan klinik secara deterministik.
+ * Retrieval konservatif untuk fakta Klinik Mitra Sehat.
  *
- * Prinsip utama:
- * - kecocokan satu kata umum tidak boleh dianggap sebagai jawaban resmi;
- * - qualifier penting (QRIS, ambulans, biaya, KTP, apotek lain, dll.) wajib ikut
- *   didukung oleh judul/keyword sumber;
- * - jika bukti tidak cukup kuat, sistem harus memilih "belum ada informasi".
+ * Prinsip:
+ * - satu kata umum tidak pernah cukup untuk menganggap jawaban resmi cocok;
+ * - qualifier penting (QRIS, stok, ambulans, tanpa KTP, apotek lain, dll.) wajib
+ *   disebut secara eksplisit pada judul/keyword sumber;
+ * - bila ragu, pilih clinic_unknown dan jadikan bahan ajar admin.
  */
 class ClinicQueryAnalyzer
 {
@@ -39,9 +39,12 @@ class ClinicQueryAnalyzer
         'wa klinik' => 'whatsapp klinik',
         'calon pengantin' => 'catin',
         'pemeriksaan calon pengantin' => 'catin',
+        'idulfitri' => 'idul fitri',
+        'hari raya idul fitri' => 'idul fitri',
+        'hari raya idul adha' => 'idul adha',
     ];
 
-    /** Kata umum yang tidak membuktikan topik sebuah knowledge. */
+    /** Kata yang tidak membuktikan topik sebuah knowledge. */
     private array $genericWords = [
         'yang', 'dan', 'atau', 'untuk', 'dengan', 'dari', 'pada', 'dalam', 'tentang',
         'apa', 'apakah', 'bagaimana', 'gimana', 'berapa', 'kapan', 'dimana', 'mana',
@@ -54,22 +57,20 @@ class ClinicQueryAnalyzer
         'cara', 'langkah', 'prosedur', 'alur', 'melalui', 'menggunakan', 'pakai',
         'umum', 'kesehatan', 'pembayaran', 'bayar', 'kalau', 'kalo', 'mohon', 'tolong', 'minta',
         'tidak', 'nggak', 'ngga', 'enggak', 'engga', 'gak', 'ga',
+        'sekarang', 'hari', 'saat', 'masih', 'sudah', 'tetap',
     ];
 
-    /**
-     * Token ini terlalu umum untuk mengelompokkan dua pertanyaan hanya karena sama-sama muncul.
-     * Contoh: "ambulans ke rumah" dan "nebulizer ke rumah" tidak boleh jadi satu topik.
-     */
+    /** Anchor yang terlalu lemah untuk mengelompokkan dua pertanyaan. */
     private array $weakTopicAnchors = [
         'rumah', 'pasien', 'dokter', 'online', 'whatsapp', 'bpjs', 'umum', 'obat',
         'hasil', 'biaya', 'harga', 'bayar', 'pembayaran', 'surat', 'kartu', 'daftar',
         'pendaftaran', 'klinik', 'layanan', 'pelayanan', 'informasi', 'kontrol',
+        'rujukan', 'antrean', 'antrian', 'mobile', 'jkn', 'poli',
     ];
 
     /**
-     * Facet kritis: bila disebut dalam pertanyaan, sumber resmi juga harus secara eksplisit
-     * mendukung facet tersebut. Ini mencegah rujukan menjawab ambulans, BPJS menjawab QRIS,
-     * atau info obat menjawab penebusan di apotek lain.
+     * Facet kritis. Bila ada di query, sumber wajib menyebut konsep yang sama.
+     * Ini mencegah jawaban "hampir mirip" yang justru berbahaya.
      *
      * @var array<string,array{query:array<int,string>,source:array<int,string>}>
      */
@@ -89,6 +90,18 @@ class ClinicQueryAnalyzer
         'ewallet' => [
             'query' => ['gopay', 'ovo', 'dana', 'e wallet', 'ewallet'],
             'source' => ['gopay', 'ovo', 'dana', 'e wallet', 'ewallet'],
+        ],
+        'stock' => [
+            'query' => ['stok', 'persediaan'],
+            'source' => ['stok', 'persediaan'],
+        ],
+        'patient_count' => [
+            'query' => ['jumlah pasien', 'berapa pasien', 'pasien hari ini'],
+            'source' => ['jumlah pasien', 'berapa pasien', 'pasien hari ini'],
+        ],
+        'staff_on_duty' => [
+            'query' => ['petugas pendaftaran', 'petugas jaga', 'petugas yang jaga', 'admin yang jaga'],
+            'source' => ['petugas pendaftaran', 'petugas jaga', 'petugas yang jaga', 'admin yang jaga'],
         ],
         'ambulance' => [
             'query' => ['ambulans', 'ambulance'],
@@ -110,6 +123,14 @@ class ClinicQueryAnalyzer
             'query' => ['mobile jkn'],
             'source' => ['mobile jkn'],
         ],
+        'queue_whatsapp' => [
+            'query' => ['booking nomor antrean lewat whatsapp', 'booking antrean lewat whatsapp', 'antrean lewat whatsapp', 'antrian lewat whatsapp'],
+            'source' => ['booking nomor antrean lewat whatsapp', 'booking antrean lewat whatsapp', 'antrean lewat whatsapp', 'antrian lewat whatsapp'],
+        ],
+        'queue_late' => [
+            'query' => ['telat datang', 'terlambat datang', 'antrean hangus', 'antrian hangus', 'nomor antrean hangus', 'nomor antrian hangus'],
+            'source' => ['telat datang', 'terlambat datang', 'antrean hangus', 'antrian hangus', 'nomor antrean hangus', 'nomor antrian hangus'],
+        ],
         'send_result_whatsapp' => [
             'query' => ['hasil pemeriksaan dikirim', 'hasil dikirim', 'kirim hasil', 'dikirim lewat whatsapp', 'dikirim melalui whatsapp'],
             'source' => ['hasil pemeriksaan dikirim', 'hasil dikirim', 'kirim hasil', 'dikirim lewat whatsapp', 'dikirim melalui whatsapp'],
@@ -117,6 +138,30 @@ class ClinicQueryAnalyzer
         'consult_whatsapp' => [
             'query' => ['konsultasi lewat whatsapp', 'konsultasi melalui whatsapp', 'konsultasi via whatsapp', 'konsultasi dulu lewat whatsapp'],
             'source' => ['konsultasi lewat whatsapp', 'konsultasi melalui whatsapp', 'konsultasi via whatsapp'],
+        ],
+        'referral_hospital_choice' => [
+            'query' => ['rumah sakit pilihan', 'rs pilihan', 'memilih rumah sakit', 'pilih rumah sakit'],
+            'source' => ['rumah sakit pilihan', 'rs pilihan', 'memilih rumah sakit', 'pilih rumah sakit'],
+        ],
+        'doctor_choice' => [
+            'query' => ['memilih dokter', 'pilih dokter', 'dokter sendiri'],
+            'source' => ['memilih dokter', 'pilih dokter', 'dokter sendiri'],
+        ],
+        'holiday_schedule' => [
+            'query' => ['lebaran', 'idul fitri', 'idul adha', 'tanggal merah', 'libur nasional', 'natal', 'tahun baru'],
+            'source' => ['lebaran', 'idul fitri', 'idul adha', 'tanggal merah', 'libur nasional', 'natal', 'tahun baru'],
+        ],
+        'near_closing_registration' => [
+            'query' => ['menit sebelum tutup', 'sebelum tutup', 'masih bisa daftar'],
+            'source' => ['menit sebelum tutup', 'sebelum tutup', 'masih bisa daftar'],
+        ],
+        'without_consultation' => [
+            'query' => ['tanpa konsultasi', 'tanpa konsultasi dokter'],
+            'source' => ['tanpa konsultasi', 'tanpa konsultasi dokter'],
+        ],
+        'without_fasting' => [
+            'query' => ['tanpa puasa'],
+            'source' => ['tanpa puasa'],
         ],
         'catin' => [
             'query' => ['catin'],
@@ -168,7 +213,7 @@ class ClinicQueryAnalyzer
             return mb_substr($this->normalize($text), 0, 190);
         }
 
-        return mb_substr(implode(' ', array_slice($tokens, 0, 10)), 0, 190);
+        return mb_substr(implode(' ', array_slice($tokens, 0, 12)), 0, 190);
     }
 
     public function isAvailabilityIntent(string $text): bool
@@ -196,7 +241,7 @@ class ClinicQueryAnalyzer
     public function topicLabel(string $text): string
     {
         $tokens = $this->meaningfulTokens($text);
-        return $tokens === [] ? '' : implode(' ', array_slice($tokens, 0, 5));
+        return $tokens === [] ? '' : implode(' ', array_slice($tokens, 0, 6));
     }
 
     public function isBroadServiceListIntent(string $text): bool
@@ -224,7 +269,8 @@ class ClinicQueryAnalyzer
                 continue;
             }
 
-            if (mb_strlen($token) >= 5) {
+            // Toleransi typo ringan hanya untuk token cukup panjang.
+            if (mb_strlen($token) >= 6) {
                 foreach ($sourceTokens as $candidate) {
                     if (abs(mb_strlen($candidate) - mb_strlen($token)) <= 1 && levenshtein($token, $candidate) <= 1) {
                         $score += 4;
@@ -259,10 +305,6 @@ class ClinicQueryAnalyzer
         ];
     }
 
-    /**
-     * Retrieval konservatif. Lebih baik menjawab "belum ada informasi" daripada
-     * mengambil knowledge yang hanya kebetulan berbagi satu kata.
-     */
     public function isStrongMatch(string $query, string $source): bool
     {
         $evidence = $this->matchEvidence($query, $source);
@@ -275,9 +317,11 @@ class ClinicQueryAnalyzer
             return $token !== '' && ! in_array($token, $this->weakTopicAnchors, true);
         }
 
-        // Untuk query multi-konsep, minimal dua konsep harus cocok dan setidaknya separuh
-        // maksud pertanyaan harus terwakili oleh sumber.
-        return $evidence['matched'] >= 2 && $evidence['coverage'] >= 0.5;
+        // Semakin panjang query, semakin banyak bukti yang dibutuhkan.
+        $requiredMatches = $evidence['query_count'] >= 5 ? 3 : 2;
+        $requiredCoverage = $evidence['query_count'] >= 5 ? 0.6 : 0.5;
+
+        return $evidence['matched'] >= $requiredMatches && $evidence['coverage'] >= $requiredCoverage;
     }
 
     public function matchScore(string $query, string $source): int
@@ -293,7 +337,7 @@ class ClinicQueryAnalyzer
 
         if ($a === [] || $b === []) {
             similar_text($this->normalize($first), $this->normalize($second), $percent);
-            return $percent >= 85;
+            return $percent >= 88;
         }
 
         $intersection = array_values(array_diff(array_intersect($a, $b), $this->weakTopicAnchors));
@@ -301,10 +345,9 @@ class ClinicQueryAnalyzer
             return false;
         }
 
-        // Satu anchor yang benar-benar khas cukup, mis. spirometri/scaling/nebulizer.
         if (count($intersection) === 1) {
             $token = $intersection[0];
-            return mb_strlen($token) >= 5;
+            return mb_strlen($token) >= 6;
         }
 
         $aStrong = array_values(array_diff($a, $this->weakTopicAnchors));
@@ -312,7 +355,7 @@ class ClinicQueryAnalyzer
         $union = array_values(array_unique([...$aStrong, ...$bStrong]));
         $jaccard = count($union) > 0 ? count($intersection) / count($union) : 0;
 
-        return count($intersection) >= 2 || $jaccard >= 0.6;
+        return count($intersection) >= 2 || $jaccard >= 0.65;
     }
 
     private function sourceSupportsCriticalFacets(string $query, string $source): bool
