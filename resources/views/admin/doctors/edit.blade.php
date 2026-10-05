@@ -4,7 +4,14 @@
 @section('content')
 @php
     $dayOrder = ['Senin' => 1, 'Selasa' => 2, 'Rabu' => 3, 'Kamis' => 4, 'Jumat' => 5, 'Sabtu' => 6, 'Minggu' => 7];
-    $sortedSchedules = $doctor->schedules->sortBy(fn ($schedule) => $dayOrder[$schedule->day] ?? 99);
+    $sortedSchedules = $doctor->schedules->sortBy(function ($schedule) use ($dayOrder) {
+        $day = str_pad((string) ($dayOrder[$schedule->day] ?? 99), 2, '0', STR_PAD_LEFT);
+        $time = $schedule->is_off ? '99:99' : substr((string) $schedule->start_time, 0, 5);
+        return $day.'-'.$time;
+    })->values();
+    $savedDayCount = $doctor->schedules->pluck('day')->unique()->count();
+    $scheduleTotalsByDay = $sortedSchedules->countBy('day');
+    $scheduleSeenByDay = [];
 @endphp
 
 <style>
@@ -54,6 +61,7 @@
     .kms-btn-primary { background:#1a5d3a; color:#fff; }
     .kms-btn-primary:hover { background:#154a2e; }
     .kms-btn-danger { background:#fff1f2; color:#dc2626; border:1px solid #fecdd3; }
+    .kms-session-badge { display:inline-flex; align-items:center; margin-left:7px; padding:2px 7px; border-radius:999px; background:#ecfdf3; color:#166534; font-size:10px; font-weight:800; vertical-align:middle; }
     .kms-schedule-card { margin-top:22px; background:#fff; border:1px solid #edf0f2; border-radius:16px; overflow:hidden; box-shadow:0 3px 14px rgba(17,24,39,.05); }
     .kms-schedule-head { padding:18px 22px; border-bottom:1px solid #edf0f2; display:flex; justify-content:space-between; align-items:center; gap:14px; }
     .kms-schedule-head h2 { margin:0; font-size:18px; font-weight:800; }
@@ -192,9 +200,9 @@
         <div class="kms-schedule-head">
             <div>
                 <h2>Jadwal Praktik</h2>
-                <p>Pilih hari yang sama untuk memperbarui jadwal yang sudah ada.</p>
+                <p>Satu hari dapat memiliki lebih dari satu sesi praktik. Tambahkan jam berikutnya dengan memilih hari yang sama.</p>
             </div>
-            <span class="kms-count">{{ $doctor->schedules->count() }} hari tersimpan</span>
+            <span class="kms-count">{{ $savedDayCount }} hari · {{ $doctor->schedules->count() }} jadwal</span>
         </div>
 
         <div class="kms-schedule-body">
@@ -225,16 +233,26 @@
 
             <div class="kms-schedule-list">
                 @forelse($sortedSchedules as $schedule)
+                    @php
+                        $scheduleSeenByDay[$schedule->day] = ($scheduleSeenByDay[$schedule->day] ?? 0) + 1;
+                        $sessionNumber = $scheduleSeenByDay[$schedule->day];
+                        $hasMultipleSessions = ($scheduleTotalsByDay[$schedule->day] ?? 0) > 1;
+                    @endphp
                     <div class="kms-schedule-item">
                         <div>
-                            <p class="kms-day">{{ $schedule->day }}</p>
+                            <p class="kms-day">
+                                {{ $schedule->day }}
+                                @if($hasMultipleSessions && ! $schedule->is_off)
+                                    <span class="kms-session-badge">Sesi {{ $sessionNumber }}</span>
+                                @endif
+                            </p>
                             @if($schedule->is_off)
                                 <p class="kms-time off">LIBUR</p>
                             @else
                                 <p class="kms-time">{{ substr($schedule->start_time, 0, 5) }} - {{ substr($schedule->end_time, 0, 5) }} WIB</p>
                             @endif
                         </div>
-                        <form method="POST" action="{{ route('admin.doctors.schedules.destroy', [$doctor, $schedule]) }}" onsubmit="return confirm('Hapus jadwal hari {{ $schedule->day }}?')">
+                        <form method="POST" action="{{ route('admin.doctors.schedules.destroy', [$doctor, $schedule]) }}" onsubmit="return confirm('Hapus {{ $schedule->is_off ? 'status libur' : 'sesi '.substr($schedule->start_time, 0, 5).' - '.substr($schedule->end_time, 0, 5) }} hari {{ $schedule->day }}?')">
                             @csrf
                             @method('DELETE')
                             <button type="submit" class="kms-btn kms-btn-danger">Hapus Jadwal</button>

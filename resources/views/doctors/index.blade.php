@@ -22,7 +22,14 @@ $scheduleData[$doctor->id] = [
 
 'specialization' => $doctor->specialization,
 
-'schedules' => $doctor->schedules->map(function ($sched) {
+'schedules' => $doctor->schedules
+->sortBy(function ($sched) {
+    $dayOrder = ['Senin' => 1, 'Selasa' => 2, 'Rabu' => 3, 'Kamis' => 4, 'Jumat' => 5, 'Sabtu' => 6, 'Minggu' => 7];
+    $day = str_pad((string) ($dayOrder[$sched->day] ?? 99), 2, '0', STR_PAD_LEFT);
+    $time = $sched->is_off ? '99:99' : substr((string) $sched->start_time, 0, 5);
+    return $day.'-'.$time;
+})
+->map(function ($sched) {
 
 return [
 

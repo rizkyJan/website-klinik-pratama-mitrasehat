@@ -94,24 +94,27 @@ class ClinicScheduleService
         $scheduled = collect();
 
         foreach ($doctors as $doctor) {
-            $schedule = $doctor->schedules->first(function ($item) use ($dayName) {
-                return $this->normalize((string) $item->day) === $this->normalize($dayName);
-            });
+            $daySchedules = $doctor->schedules
+                ->filter(function ($item) use ($dayName) {
+                    return $this->normalize((string) $item->day) === $this->normalize($dayName)
+                        && ! $item->is_off
+                        && filled($item->start_time)
+                        && filled($item->end_time);
+                })
+                ->sortBy(fn ($item) => $this->minutes((string) $item->start_time));
 
-            if (! $schedule || $schedule->is_off || blank($schedule->start_time) || blank($schedule->end_time)) {
-                continue;
+            foreach ($daySchedules as $schedule) {
+                $start = $this->timeText((string) $schedule->start_time);
+                $end = $this->timeText((string) $schedule->end_time);
+
+                $scheduled->push([
+                    'doctor' => $doctor,
+                    'start' => $start,
+                    'end' => $end,
+                    'start_minutes' => $this->minutes((string) $schedule->start_time),
+                    'end_minutes' => $this->minutes((string) $schedule->end_time),
+                ]);
             }
-
-            $start = $this->timeText((string) $schedule->start_time);
-            $end = $this->timeText((string) $schedule->end_time);
-
-            $scheduled->push([
-                'doctor' => $doctor,
-                'start' => $start,
-                'end' => $end,
-                'start_minutes' => $this->minutes((string) $schedule->start_time),
-                'end_minutes' => $this->minutes((string) $schedule->end_time),
-            ]);
         }
 
         $scheduled = $scheduled->sortBy('start_minutes')->values();
@@ -180,17 +183,23 @@ class ClinicScheduleService
         foreach (self::DAYS as $dayName) {
             $rows = collect();
             foreach ($doctors as $doctor) {
-                $schedule = $doctor->schedules->first(fn ($item) => $this->normalize((string) $item->day) === $this->normalize($dayName));
-                if (! $schedule || $schedule->is_off || blank($schedule->start_time) || blank($schedule->end_time)) {
-                    continue;
-                }
+                $daySchedules = $doctor->schedules
+                    ->filter(function ($item) use ($dayName) {
+                        return $this->normalize((string) $item->day) === $this->normalize($dayName)
+                            && ! $item->is_off
+                            && filled($item->start_time)
+                            && filled($item->end_time);
+                    })
+                    ->sortBy(fn ($item) => $this->minutes((string) $item->start_time));
 
-                $rows->push([
-                    'doctor' => $doctor,
-                    'start' => $this->timeText((string) $schedule->start_time),
-                    'end' => $this->timeText((string) $schedule->end_time),
-                    'start_minutes' => $this->minutes((string) $schedule->start_time),
-                ]);
+                foreach ($daySchedules as $schedule) {
+                    $rows->push([
+                        'doctor' => $doctor,
+                        'start' => $this->timeText((string) $schedule->start_time),
+                        'end' => $this->timeText((string) $schedule->end_time),
+                        'start_minutes' => $this->minutes((string) $schedule->start_time),
+                    ]);
+                }
             }
 
             if ($rows->isEmpty()) {
@@ -199,8 +208,18 @@ class ClinicScheduleService
 
             $lines[] = '';
             $lines[] = $dayName;
-            foreach ($rows->sortBy('start_minutes') as $row) {
-                $lines[] = '• '.$row['doctor']->name.' — '.$row['start'].'–'.$row['end'].' WIB';
+
+            $groupedRows = $rows
+                ->sortBy('start_minutes')
+                ->groupBy(fn ($row) => $row['doctor']->id);
+
+            foreach ($groupedRows as $doctorRows) {
+                $first = $doctorRows->first();
+                $times = $doctorRows
+                    ->map(fn ($row) => $row['start'].'–'.$row['end'].' WIB')
+                    ->implode('; ');
+
+                $lines[] = '• '.$first['doctor']->name.' — '.$times;
             }
         }
 
@@ -212,11 +231,21 @@ class ClinicScheduleService
 
     private function formatRows(Collection $rows): string
     {
-        return $rows->map(function ($row) {
-            $specialization = trim((string) $row['doctor']->specialization);
-            $extra = $specialization !== '' ? ' ('.$specialization.')' : '';
-            return '• '.$row['doctor']->name.$extra."\n  ".$row['start'].'–'.$row['end'].' WIB';
-        })->implode("\n");
+        return $rows
+            ->sortBy('start_minutes')
+            ->groupBy(fn ($row) => $row['doctor']->id)
+            ->map(function (Collection $doctorRows) {
+                $first = $doctorRows->first();
+                $specialization = trim((string) $first['doctor']->specialization);
+                $extra = $specialization !== '' ? ' ('.$specialization.')' : '';
+
+                $times = $doctorRows
+                    ->map(fn ($row) => $row['start'].'–'.$row['end'].' WIB')
+                    ->implode("\n  ");
+
+                return '• '.$first['doctor']->name.$extra."\n  ".$times;
+            })
+            ->implode("\n");
     }
 
     private function filterDoctors(Collection $doctors, string $text): Collection

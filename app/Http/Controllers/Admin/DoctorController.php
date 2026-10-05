@@ -155,12 +155,58 @@ class DoctorController extends Controller
             'is_off' => $isOff,
         ];
 
-        $doctor->schedules()->updateOrCreate(
-            ['day' => $scheduleData['day']],
-            $scheduleData
-        );
+        // Jika hari ditandai LIBUR, hapus seluruh sesi praktik pada hari tersebut
+        // agar status hari tetap konsisten dan hanya tersimpan satu entri LIBUR.
+        if ($isOff) {
+            $doctor->schedules()
+                ->where('day', $scheduleData['day'])
+                ->delete();
 
-        return back()->with('success', 'Jadwal dokter berhasil disimpan.');
+            $doctor->schedules()->create($scheduleData);
+
+            return back()->with('success', 'Jadwal '.$scheduleData['day'].' berhasil ditandai LIBUR.');
+        }
+
+        // Saat menambahkan sesi praktik, hapus penanda LIBUR pada hari yang sama.
+        // Hari yang sama boleh memiliki lebih dari satu sesi, misalnya
+        // 00.00–07.00 dan 14.00–21.00.
+        $doctor->schedules()
+            ->where('day', $scheduleData['day'])
+            ->where('is_off', true)
+            ->delete();
+
+        $startMinutes = $this->timeToMinutes($scheduleData['start_time']);
+        $endMinutes = $this->timeToMinutes($scheduleData['end_time']);
+
+        $existingSchedules = $doctor->schedules()
+            ->where('day', $scheduleData['day'])
+            ->where('is_off', false)
+            ->get();
+
+        foreach ($existingSchedules as $existingSchedule) {
+            $existingStart = $this->timeToMinutes((string) $existingSchedule->start_time);
+            $existingEnd = $this->timeToMinutes((string) $existingSchedule->end_time);
+
+            if ($existingStart === $startMinutes && $existingEnd === $endMinutes) {
+                return back()
+                    ->withErrors(['start_time' => 'Jadwal dengan jam yang sama sudah tersimpan pada hari '.$scheduleData['day'].'.'])
+                    ->withInput();
+            }
+
+            $overlaps = $startMinutes < $existingEnd && $endMinutes > $existingStart;
+
+            if ($overlaps) {
+                return back()
+                    ->withErrors([
+                        'start_time' => 'Jam praktik bertabrakan dengan jadwal '.$this->displayTime((string) $existingSchedule->start_time).'–'.$this->displayTime((string) $existingSchedule->end_time).' WIB pada hari '.$scheduleData['day'].'.',
+                    ])
+                    ->withInput();
+            }
+        }
+
+        $doctor->schedules()->create($scheduleData);
+
+        return back()->with('success', 'Sesi jadwal dokter berhasil ditambahkan.');
     }
 
     public function destroySchedule(Doctor $doctor, DoctorSchedule $schedule)
@@ -170,6 +216,35 @@ class DoctorController extends Controller
         $schedule->delete();
 
         return back()->with('success', 'Jadwal berhasil dihapus.');
+    }
+
+    private function timeToMinutes(?string $time): int
+    {
+        $time = trim((string) $time);
+        if ($time === '') {
+            return 0;
+        }
+
+        $time = str_replace('.', ':', $time);
+        if (preg_match('/^(\d{1,2}):(\d{2})/', $time, $matches) === 1) {
+            return ((int) $matches[1]) * 60 + (int) $matches[2];
+        }
+
+        return 0;
+    }
+
+    private function displayTime(?string $time): string
+    {
+        $time = trim((string) $time);
+        if ($time === '') {
+            return '--.--';
+        }
+
+        if (preg_match('/^(\d{1,2})[:.](\d{2})/', $time, $matches) === 1) {
+            return str_pad($matches[1], 2, '0', STR_PAD_LEFT).'.'.$matches[2];
+        }
+
+        return $time;
     }
 
     private function deleteUploadedPhoto(?string $photo): void
