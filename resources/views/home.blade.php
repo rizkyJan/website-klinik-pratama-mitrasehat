@@ -1132,7 +1132,7 @@
                             </svg>
                         </div>
 
-                        <h3>Halo, Saya dr. Auliya</h3>
+                        <h3>Halo, Saya dr.Auliya Andriyati, Sp.PD FINASIM</h3>
                         <div class="ms-doctor-sub">Bersama Anda, untuk Hidup Lebih Sehat</div>
 
                         <div class="ms-doctor-text">
@@ -1192,7 +1192,7 @@
                         </div>
 
                         <div class="ms-quote-name">
-                            dr. Auliya
+                            dr.Auliya Andriyati, Sp.PD FINASIM
                             <span>Klinik Pratama Mitra Sehat</span>
                         </div>
                     </div>
@@ -1215,7 +1215,7 @@
                             class="ms-mobile-doctor">
 
                         <div class="ms-mobile-name">
-                            <b>dr. Auliya</b>
+                            <b>dr.Auliya Andriyati, Sp.PD FINASIM</b>
                             <small>Klinik Pratama Mitra Sehat</small>
                         </div>
                     </div>
@@ -1229,7 +1229,7 @@
                             </svg>
                         </div>
 
-                        <h3>Halo, Saya dr. Auliya</h3>
+                        <h3>Halo, Saya dr.Auliya Andriyati, Sp.PD FINASIM</h3>
                         <div class="ms-mobile-sub">Bersama Anda, untuk Hidup Lebih Sehat</div>
 
                         <div class="ms-mobile-text">
