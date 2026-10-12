@@ -2,7 +2,11 @@
 
 
 
-@section('pageTitle', 'Klinik Pratama Mitra Sehat')
+
+@section('pageTitle', 'Klinik Pratama Mitra Sehat Sukoharjo | Website Resmi')
+
+@section('metaDescription', 'Website resmi Klinik Pratama Mitra Sehat Sukoharjo. Temukan informasi layanan kesehatan, jadwal dokter, pendaftaran pasien, lokasi, dan kontak klinik.')
+
 
 
 
