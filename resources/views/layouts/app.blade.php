@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="id">
 <head>
@@ -6,14 +5,36 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
     @php
-        // SEO default website klinik
-        $seoTitle = $pageTitle ??
-            'Klinik Pratama Mitra Sehat Sukoharjo | Website Resmi';
+        /*
+        |--------------------------------------------------------------------------
+        | SEO Website Klinik Pratama Mitra Sehat
+        |--------------------------------------------------------------------------
+        | Mendukung @section('pageTitle') pada halaman Blade,
+        | serta $pageTitle dari controller jika tersedia.
+        */
 
-        $seoDescription = $metaDescription ??
-            'Website resmi Klinik Pratama Mitra Sehat Sukoharjo. Temukan informasi layanan kesehatan, jadwal dokter, pendaftaran pasien, dan kontak klinik.';
+        $defaultTitle = 'Klinik Pratama Mitra Sehat Sukoharjo | Website Resmi';
 
-        // URL utama setiap halaman tanpa query string
+        $defaultDescription = 'Website resmi Klinik Pratama Mitra Sehat Sukoharjo. Informasi layanan kesehatan, jadwal dokter, pendaftaran pasien, dan kontak klinik.';
+
+        $seoTitle = trim(
+            $__env->yieldContent(
+                'pageTitle',
+                $pageTitle ?? $defaultTitle
+            )
+        );
+
+        $seoDescription = trim(
+            $__env->yieldContent(
+                'metaDescription',
+                $metaDescription ?? $defaultDescription
+            )
+        );
+
+        $seoTitle = $seoTitle ?: $defaultTitle;
+        $seoDescription = $seoDescription ?: $defaultDescription;
+
+        // Canonical URL tanpa query string
         $seoCanonical = $canonicalUrl ??
             rtrim(config('app.url'), '/') . request()->getPathInfo();
     @endphp
@@ -24,12 +45,12 @@
     <meta name="description"
           content="{{ $seoDescription }}">
 
-    <link rel="canonical"
-          href="{{ $seoCanonical }}">
+    <meta name="robots" content="index, follow">
 
-    <!-- Open Graph: WhatsApp, Facebook, dan media sosial -->
+    <link rel="canonical" href="{{ $seoCanonical }}">
+
+    <!-- Open Graph -->
     <meta property="og:type" content="website">
-
     <meta property="og:locale" content="id_ID">
 
     <meta property="og:site_name"
@@ -44,7 +65,7 @@
     <meta property="og:url"
           content="{{ $seoCanonical }}">
 
-    <!-- Twitter / X Card -->
+    <!-- Twitter / X -->
     <meta name="twitter:card" content="summary">
 
     <meta name="twitter:title"
