@@ -2,6 +2,9 @@
 
 @section('pageTitle', 'Jadwal Praktek Dokter - Klinik Pratama Mitra Sehat')
 
+@section('metaDescription', 'Lihat jadwal praktik dokter Klinik Pratama Mitra Sehat Sukoharjo. Temukan informasi dokter dan jadwal pelayanan untuk merencanakan kunjungan Anda.')
+
+
 
 
 @section('content')
