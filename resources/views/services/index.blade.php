@@ -1,6 +1,9 @@
 @extends('layouts.app')
 @section('pageTitle', 'Layanan Kesehatan - Klinik Pratama Mitra Sehat')
 
+@section('metaDescription', 'Jelajahi layanan kesehatan yang tersedia di Klinik Pratama Mitra Sehat Sukoharjo. Dapatkan informasi pelayanan dan fasilitas klinik untuk kebutuhan kesehatan Anda.')
+
+
 @section('content')
 
 <style>
