@@ -74,6 +74,42 @@
     <meta name="twitter:description"
           content="{{ $seoDescription }}">
 
+
+    <!-- Structured Data: Klinik Pratama Mitra Sehat -->
+    @if(request()->getPathInfo() === '/')
+        @php
+            $clinicSchema = [
+                '@context' => 'https://schema.org',
+                '@type' => 'MedicalClinic',
+                '@id' => 'https://mitrasehatms.com/#medicalclinic',
+
+                'name' => 'Klinik Pratama Mitra Sehat',
+                'alternateName' => 'Klinik Pratama Mitra Sehat Sukoharjo',
+
+                'url' => 'https://mitrasehatms.com/',
+
+                'description' => 'Klinik Pratama Mitra Sehat di Sukoharjo menyediakan layanan kesehatan, informasi jadwal dokter, dan pendaftaran pasien.',
+
+                'telephone' => '+62-271-592374',
+
+                'address' => [
+                    '@type' => 'PostalAddress',
+                    'streetAddress' => 'Jl. Veteran No.70, Ngabeyan, Jetis, Kec. Sukoharjo',
+                    'addressLocality' => 'Sukoharjo',
+                    'addressRegion' => 'Jawa Tengah',
+                    'postalCode' => '57511',
+                    'addressCountry' => 'ID',
+                ],
+            ];
+        @endphp
+
+        <script type="application/ld+json">
+            @json($clinicSchema)
+        </script>
+    @endif
+
+    
+    
     <!-- Tailwind CSS -->
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 
