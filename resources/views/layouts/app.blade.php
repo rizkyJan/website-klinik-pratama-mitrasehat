@@ -88,6 +88,12 @@
 
                 'url' => 'https://mitrasehatms.com/',
 
+                
+                'image' => 'https://mitrasehatms.com/images/foto-klinik.png',
+                
+                'logo' => 'https://mitrasehatms.com/images/logo-klinik-mitra-sehat.png',
+
+
                 'description' => 'Klinik Pratama Mitra Sehat di Sukoharjo menyediakan layanan kesehatan, informasi jadwal dokter, dan pendaftaran pasien.',
 
                 'telephone' => '+62-271-592374',
